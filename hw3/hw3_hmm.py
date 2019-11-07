@@ -14,6 +14,8 @@ from operator import itemgetter
 from collections import defaultdict
 from math import log
 
+import numpy as np
+
 # Unknown word token
 UNK = 'UNK'
 
@@ -77,6 +79,12 @@ class HMM:
         # Unknown word threshold, default value is 5 (words occuring fewer than 5 times should be treated as UNK)
         self.minFreq = unknownWordThreshold
         ### Initialize the rest of your data structures here ###
+        self.word2freq = defaultdict()
+        self.tag2idx = defaultdict()
+        self.idx2tag = defaultdict()
+        self.initial = defaultdict()
+        self.transition = defaultdict(lambda: defaultdict(float))
+        self.emission = defaultdict(lambda: defaultdict(float))
 
     ################################
     #intput:                       #
@@ -86,6 +94,43 @@ class HMM:
     # Given labeled corpus in trainFile, build the HMM distributions from the observed counts
     def train(self, trainFile):
         data = self.readLabeledData(trainFile) # data is a nested list of TaggedWords
+        
+        # make word2freq & tag2idx
+        tag_idx = 0
+        for sen in data:
+            for taggedword in sen:
+                self.word2freq[taggedword.word] += 1
+                if taggedword.tag not in self.tag2idx.keys():
+                    self.tag2idx[taggedword.tag] = tag_idx
+                    self.idx2tag[tag_idx] = taggedword.tag
+                    tag_idx += 1
+        
+        # replace with unk
+        for k in self.word2freq.keys():
+            if self.word2freq[k] < self.minFreq:
+                self.word2freq[UNK] += self.word2freq.pop(k)
+
+        # make initial probability
+        for sen in data:
+            initial[sen[0].tag] += 1
+            initial['_TOTAL_'] += 1
+
+        # make transition probability
+        for sen in data:
+            for i in range(1, len(sen)):
+                self.transition[sen[i-1].tag][sen[i].tag] += 1
+                self.transition[sen[i-1].tag]['_TOTAL_'] += 1
+
+        # make emission probability
+        for sen in data:
+            for taggedword in sen:
+                if taggedword.word in self.word2freq.keys():
+                    emission[taggedword.tag][taggedword.word] += 1
+                    emission[taggedword.tag]['_TOTAL_'] += 1
+                else:
+                    emission[taggedword.tag][UNK] += 1
+                    emission[taggedword.tag]['_TOTAL_'] += 1
+
         #print("Your first task is to train a bigram HMM tagger from an input file of POS-tagged text")
 
     ################################
@@ -115,6 +160,23 @@ class HMM:
     def viterbi(self, words):
         #print("Your second task is to implement the Viterbi algorithm for the HMM tagger")
         # returns the list of Viterbi POS tags (strings)
+        n = len(words)
+        t = len(self.tag2idx)
+        # trellis = np.zeros(t, n)
+        trellis = []
+        for j in range(0, t):
+            row = []
+            for i in range(0, n):
+                row.append(0)
+            trellis.append(row)
+
+        # initialize trellis
+        for i in range(0, t):
+            trellis[0][i] = (self.initial[self.idx2tag[i]] / self.initial['_TOTAL_']) * self.emission[self.idx2tag[i]][words[0]]
+        
+        print(trellis)
+        sys.exit()
+
         return ["NULL"]*len(words) # this returns a dummy list of "NULL", equal in length to words
 
 if __name__ == "__main__":
