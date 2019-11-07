@@ -12,9 +12,8 @@ import os.path
 import sys
 from operator import itemgetter
 from collections import defaultdict
+import math
 from math import log
-
-import numpy as np
 
 # Unknown word token
 UNK = 'UNK'
@@ -79,10 +78,11 @@ class HMM:
         # Unknown word threshold, default value is 5 (words occuring fewer than 5 times should be treated as UNK)
         self.minFreq = unknownWordThreshold
         ### Initialize the rest of your data structures here ###
-        self.word2freq = defaultdict()
-        self.tag2idx = defaultdict()
-        self.idx2tag = defaultdict()
-        self.initial = defaultdict()
+        self.__word2freq = defaultdict(float)
+        self.word2freq = defaultdict(float)
+        self.tag2idx = defaultdict(float)
+        self.idx2tag = defaultdict(str)
+        self.initial = defaultdict(float)
         self.transition = defaultdict(lambda: defaultdict(float))
         self.emission = defaultdict(lambda: defaultdict(float))
 
@@ -94,26 +94,28 @@ class HMM:
     # Given labeled corpus in trainFile, build the HMM distributions from the observed counts
     def train(self, trainFile):
         data = self.readLabeledData(trainFile) # data is a nested list of TaggedWords
-        
-        # make word2freq & tag2idx
+
+        # make __word2freq & tag2idx
         tag_idx = 0
         for sen in data:
             for taggedword in sen:
-                self.word2freq[taggedword.word] += 1
+                self.__word2freq[taggedword.word] += 1
                 if taggedword.tag not in self.tag2idx.keys():
                     self.tag2idx[taggedword.tag] = tag_idx
                     self.idx2tag[tag_idx] = taggedword.tag
                     tag_idx += 1
-        
-        # replace with unk
-        for k in self.word2freq.keys():
-            if self.word2freq[k] < self.minFreq:
-                self.word2freq[UNK] += self.word2freq.pop(k)
+
+        # replace with unk and make word2freq
+        for k in self.__word2freq.keys():
+            if self.__word2freq[k] < self.minFreq:
+                self.word2freq[UNK] += self.__word2freq[k]
+            else:
+                self.word2freq[k] += self.__word2freq[k]
 
         # make initial probability
         for sen in data:
-            initial[sen[0].tag] += 1
-            initial['_TOTAL_'] += 1
+            self.initial[sen[0].tag] += 1
+            self.initial['_TOTAL_'] += 1
 
         # make transition probability
         for sen in data:
@@ -125,11 +127,11 @@ class HMM:
         for sen in data:
             for taggedword in sen:
                 if taggedword.word in self.word2freq.keys():
-                    emission[taggedword.tag][taggedword.word] += 1
-                    emission[taggedword.tag]['_TOTAL_'] += 1
+                    self.emission[taggedword.tag][taggedword.word] += 1
+                    self.emission[taggedword.tag]['_TOTAL_'] += 1
                 else:
-                    emission[taggedword.tag][UNK] += 1
-                    emission[taggedword.tag]['_TOTAL_'] += 1
+                    self.emission[taggedword.tag][UNK] += 1
+                    self.emission[taggedword.tag]['_TOTAL_'] += 1
 
         #print("Your first task is to train a bigram HMM tagger from an input file of POS-tagged text")
 
@@ -148,6 +150,7 @@ class HMM:
             senString = ''
             for i in range(len(sen)):
                 senString += sen[i]+"_"+vitTags[i]+" "
+            # print(senString.rstrip(), end="\n")
             print(senString.rstrip(), end="\n", file=f)
 
     ################################
@@ -162,24 +165,88 @@ class HMM:
         # returns the list of Viterbi POS tags (strings)
         n = len(words)
         t = len(self.tag2idx)
-        # trellis = np.zeros(t, n)
+
+        # INITIALIZE TRELLIS and BACKPOINTER MATRIX
         trellis = []
-        for j in range(0, t):
-            row = []
-            for i in range(0, n):
-                row.append(0)
-            trellis.append(row)
-
-        # initialize trellis
+        bp = []
         for i in range(0, t):
-            trellis[0][i] = (self.initial[self.idx2tag[i]] / self.initial['_TOTAL_']) * self.emission[self.idx2tag[i]][words[0]]
-        
-        print(trellis)
-        sys.exit()
+            trellis_row = []
+            bp_row = []
+            # row loop
+            for j in range(0, n):
+                trellis_row.append(-math.inf)
+                bp_row.append(-1)
+            trellis.append(trellis_row)
+            bp.append(bp_row)
 
-        return ["NULL"]*len(words) # this returns a dummy list of "NULL", equal in length to words
+        # FIRST COLUMN
+        # print("Calculating column 0")
+        for i in range(0, t):
+            # EMISSION PROBABILITY
+            if words[0] in self.word2freq.keys():
+                ep = self.emission[self.idx2tag[i]][words[0]]
+            else:
+                ep = self.emission[self.idx2tag[i]][UNK]
+            # PROBABILITY
+            try:
+                trellis[i][0] = log((self.initial[self.idx2tag[i]] / self.initial['_TOTAL_'])) + log(ep)
+            except:
+                trellis[i][0] = -math.inf
+        # print("Finished column 0")
+
+        # OTHER COLUMNS
+        for j in range(1, n):
+            # print("Calculating column " + str(j))
+            for i in range(0, t):
+                # EMISSION PROBABILITY
+                if words[j] in self.word2freq.keys():
+                    ep = self.emission[self.idx2tag[i]][words[j]]
+                else:
+                    ep = self.emission[self.idx2tag[i]][UNK]
+                # print("Finished ep")
+                # TRANSITION POSSIBILITY
+                pmax = -math.inf
+                kmax = -1
+                for k in range(0, t):
+                    tp = self.transition[self.idx2tag[k]][self.idx2tag[i]]
+                    try:
+                        p = trellis[k][j-1] + log(ep) + log(tp)
+                    except:
+                        p = -math.inf
+                    if p > pmax:
+                        pmax = p
+                        kmax = k
+                trellis[i][j] = pmax
+                bp[i][j] = kmax
+            # print("Finished column " + str(j))
+
+        # FIND MAX IN LAST COLUMN
+        imax = -1
+        pmax = -math.inf
+        for i in range(0, t):
+            p = trellis[i][n-1]
+            if p > pmax:
+                pmax = p
+                imax = i
+
+        j = n-1
+        i = imax
+        _tags = []
+        _tags.append(self.idx2tag[i])
+        tags = []
+        while j > 0:
+            i = bp[i][j]    # next i
+            _tags.append(self.idx2tag[i])
+            j -= 1
+
+        tags = _tags[::-1]
+
+        # print("Finished Viterbi")
+        return tags
+        # return ["NULL"]*len(words) # this returns a dummy list of "NULL", equal in length to words
 
 if __name__ == "__main__":
     tagger = HMM()
     tagger.train('train.txt')
+    print("Finished Training")
     tagger.test('test.txt', 'out.txt')
