@@ -11,6 +11,7 @@
 import os.path
 import sys
 from operator import itemgetter
+from collections import defaultdict
 
 # Unknown word token
 UNK = 'UNK'
@@ -79,6 +80,26 @@ class Eval:
         self.test = self.readLabeledData(testFile)
         self.goldraw = self.readLabeledDataRaw(goldFile)
         self.testraw = self.readLabeledDataRaw(testFile)
+        self.tag2idx = defaultdict(int)
+        self.idx2tag = defaultdict(str)
+        self.cm = []
+
+        # INIT tag2idx and idx2tag DICTIONARY
+        tag_idx = 0
+        for sen in self.gold:
+            for taggedword in sen:
+                if taggedword.tag not in self.tag2idx.keys():
+                    self.tag2idx[taggedword.tag] = tag_idx
+                    self.idx2tag[tag_idx] = taggedword.tag
+                    tag_idx += 1
+
+        # INIT CONFUSION MATRIX
+        for i in range(0, len(self.tag2idx)):
+            cm_row = []
+            for j in range(0, len(self.tag2idx)):
+                cm_row.append(0.0)
+            self.cm.append(cm_row)
+
         if len(self.gold) != len(self.test) or len(self.goldraw) != len(self.testraw):
             print("File size mismatch!")
             print("Gold file size = " + str(len(self.gold)))
@@ -127,6 +148,37 @@ class Eval:
     ################################
     def writeConfusionMatrix(self, outFile):
         print("Write a confusion matrix to outFile; elements in the matrix can be frequencies (you don't need to normalize)")
+        f=open(outFile, 'w+')
+        for i in range(0, len(self.test)):
+            for j in range(0, len(self.test[i])):
+                predicted = self.test[i][j].tag
+                actual = self.gold[i][j].tag
+
+                self.cm[self.tag2idx[actual]][self.tag2idx[predicted]] += 1.0
+        # print(self.cm[self.tag2idx['NNP']][self.tag2idx['NNP']])
+
+        # print(self.cm)
+        print(self.tag2idx)
+
+        # FIRST ROW
+        for i in range(0, len(self.idx2tag)):
+            if i != len(self.idx2tag)-1:
+                print(self.idx2tag[i], end=',', file=f)
+            else:
+                print(self.idx2tag[i], end='\n', file=f)
+
+        # OTHER ROWs
+        for i in range(0, len(self.idx2tag)):
+            # PRINT TAG NAME
+            print(self.idx2tag[i], end=',', file=f)
+            # PRINT CM ROW
+            for j in range(0, len(self.idx2tag)):
+                # IF NOT LAST ROW
+                if j != len(self.idx2tag)-1:
+                    print(self.cm[i][j], end=',', file=f)
+                # IF LAST ROW
+                else:
+                    print(self.cm[i][j], end='\n', file=f)
 
     ################################
     #intput:                       #
@@ -141,7 +193,7 @@ class Eval:
         for i in range(0, len(self.test)):
             for j in range(0, len(self.test[i])):
                 if self.test[i][j].tag == tagTi:
-                    if self.test[i][j].tag == self.gold[i][j].tag:
+                    if self.gold[i][j].tag == tagTi:
                         tp += 1.0
                     else:
                         fp += 1.0
@@ -163,7 +215,7 @@ class Eval:
         for i in range(0, len(self.gold)):
             for j in range(0, len(self.gold[i])):
                 if self.gold[i][j].tag == tagTj:
-                    if self.gold[i][j].tag == self.test[i][j].tag:
+                    if self.test[i][j].tag == tagTj:
                         tp += 1.0
                     else:
                         fn += 1.0

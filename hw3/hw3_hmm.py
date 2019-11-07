@@ -123,6 +123,13 @@ class HMM:
                 self.transition[sen[i-1].tag][sen[i].tag] += 1
                 self.transition[sen[i-1].tag]['_TOTAL_'] += 1
 
+        # smooth transition probability
+        for t_i in self.transition.keys():
+            for t_j in self.transition[t_i].keys():
+                if t_j != '_TOTAL_':
+                    self.transition[t_i][t_j] += 1
+                    self.transition[t_i]['_TOTAL_'] += 1
+
         # make emission probability
         for sen in data:
             for taggedword in sen:
@@ -145,7 +152,11 @@ class HMM:
     def test(self, testFile, outFile):
         data = self.readUnlabeledData(testFile)
         f=open(outFile, 'w+')
+        count = 0
         for sen in data:
+            count += 1
+            if (count % 100 == 0):
+                print("Testing sentence " + str(count))
             vitTags = self.viterbi(sen)
             senString = ''
             for i in range(len(sen)):
@@ -233,16 +244,13 @@ class HMM:
         i = imax
         _tags = []
         _tags.append(self.idx2tag[i])
-        tags = []
         while j > 0:
             i = bp[i][j]    # next i
             _tags.append(self.idx2tag[i])
             j -= 1
-
-        tags = _tags[::-1]
-
+        _tags.reverse()
         # print("Finished Viterbi")
-        return tags
+        return _tags
         # return ["NULL"]*len(words) # this returns a dummy list of "NULL", equal in length to words
 
 if __name__ == "__main__":
