@@ -97,7 +97,7 @@ class Eval:
         for i in range(0, len(self.tag2idx)):
             cm_row = []
             for j in range(0, len(self.tag2idx)):
-                cm_row.append(0.0)
+                cm_row.append(0)
             self.cm.append(cm_row)
 
         if len(self.gold) != len(self.test) or len(self.goldraw) != len(self.testraw):
@@ -154,7 +154,7 @@ class Eval:
                 predicted = self.test[i][j].tag
                 actual = self.gold[i][j].tag
 
-                self.cm[self.tag2idx[actual]][self.tag2idx[predicted]] += 1.0
+                self.cm[self.tag2idx[actual]][self.tag2idx[predicted]] += 1
         # print(self.cm[self.tag2idx['NNP']][self.tag2idx['NNP']])
 
         # print(self.cm)

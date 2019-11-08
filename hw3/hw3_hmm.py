@@ -78,13 +78,12 @@ class HMM:
         # Unknown word threshold, default value is 5 (words occuring fewer than 5 times should be treated as UNK)
         self.minFreq = unknownWordThreshold
         ### Initialize the rest of your data structures here ###
-        self.__word2freq = defaultdict(float)
         self.word2freq = defaultdict(float)
         self.tag2idx = defaultdict(float)
         self.idx2tag = defaultdict(str)
-        self.initial = defaultdict(float)
-        self.transition = defaultdict(lambda: defaultdict(float))
-        self.emission = defaultdict(lambda: defaultdict(float))
+        self.i = defaultdict(float)
+        self.t = defaultdict(lambda: defaultdict(float))
+        self.e = defaultdict(lambda: defaultdict(float))
 
     ################################
     #intput:                       #
@@ -96,49 +95,66 @@ class HMM:
         data = self.readLabeledData(trainFile) # data is a nested list of TaggedWords
 
         # make __word2freq & tag2idx
+        __word2freq = defaultdict(float)
         tag_idx = 0
         for sen in data:
             for taggedword in sen:
-                self.__word2freq[taggedword.word] += 1
+                __word2freq[taggedword.word] += 1
                 if taggedword.tag not in self.tag2idx.keys():
                     self.tag2idx[taggedword.tag] = tag_idx
                     self.idx2tag[tag_idx] = taggedword.tag
                     tag_idx += 1
 
         # replace with unk and make word2freq
-        for k in self.__word2freq.keys():
-            if self.__word2freq[k] < self.minFreq:
-                self.word2freq[UNK] += self.__word2freq[k]
+        for k in __word2freq.keys():
+            if __word2freq[k] < self.minFreq:
+                self.word2freq[UNK] += __word2freq[k]
             else:
-                self.word2freq[k] += self.__word2freq[k]
+                self.word2freq[k] += __word2freq[k]
 
-        # make initial probability
+        i_total = 0.0
+        t_total = defaultdict(float)
+        e_total = defaultdict(float)
         for sen in data:
-            self.initial[sen[0].tag] += 1
-            self.initial['_TOTAL_'] += 1
+            # make initial probability
+            self.i[sen[0].tag] += 1.0
+            i_total += 1.0
 
-        # make transition probability
-        for sen in data:
+            # make transition probability
             for i in range(1, len(sen)):
-                self.transition[sen[i-1].tag][sen[i].tag] += 1
-                self.transition[sen[i-1].tag]['_TOTAL_'] += 1
+                self.t[sen[i-1].tag][sen[i].tag] += 1.0
+                t_total[sen[i-1].tag] += 1.0
 
-        # smooth transition probability
-        for t_i in self.transition.keys():
-            for t_j in self.transition[t_i].keys():
-                if t_j != '_TOTAL_':
-                    self.transition[t_i][t_j] += 1
-                    self.transition[t_i]['_TOTAL_'] += 1
-
-        # make emission probability
-        for sen in data:
+            # make emission probability
             for taggedword in sen:
                 if taggedword.word in self.word2freq.keys():
-                    self.emission[taggedword.tag][taggedword.word] += 1
-                    self.emission[taggedword.tag]['_TOTAL_'] += 1
+                    self.e[taggedword.tag][taggedword.word] += 1.0
+                    e_total[taggedword.tag] += 1.0
+                    # print(taggedword.tag)
+                    # print(e_total[taggedword.tag])
                 else:
-                    self.emission[taggedword.tag][UNK] += 1
-                    self.emission[taggedword.tag]['_TOTAL_'] += 1
+                    self.e[taggedword.tag][UNK] += 1.0
+                    e_total[taggedword.tag] += 1.0
+                    # print(taggedword.tag)
+                    # print(e_total[taggedword.tag])
+
+        # smooth transition probability
+        for t_i in self.tag2idx.keys():
+            for t_j in self.tag2idx.keys():
+                self.t[t_i][t_j] += 1.0
+                t_total[t_i] += 1.0
+
+        # normalize self.i, self.t and self.e
+        for t_i in self.i.keys():
+            self.i[t_i] = self.i[t_i] / i_total
+
+        for t_i in self.t.keys():
+            for t_j in self.t.keys():
+                self.t[t_i][t_j] = self.t[t_i][t_j] / t_total[t_i]
+
+        for t_i in self.e.keys():
+            for w_i in self.e[t_i].keys():
+                self.e[t_i][w_i] = self.e[t_i][w_i] / e_total[t_i]
 
         #print("Your first task is to train a bigram HMM tagger from an input file of POS-tagged text")
 
@@ -192,43 +208,45 @@ class HMM:
 
         # FIRST COLUMN
         # print("Calculating column 0")
-        for i in range(0, t):
+        for t_i in self.t.keys():
             # EMISSION PROBABILITY
-            if words[0] in self.word2freq.keys():
-                ep = self.emission[self.idx2tag[i]][words[0]]
+            if self.word2freq[words[0]] >= self.minFreq:
+                ep = self.e[t_i][words[0]]
             else:
-                ep = self.emission[self.idx2tag[i]][UNK]
+                ep = self.e[t_i][UNK]
             # PROBABILITY
             try:
-                trellis[i][0] = log((self.initial[self.idx2tag[i]] / self.initial['_TOTAL_'])) + log(ep)
+                trellis[self.tag2idx[t_i]][0] = log(self.i[t_i]) + log(ep)
             except:
-                trellis[i][0] = -math.inf
+                trellis[self.tag2idx[t_i]][0] = -math.inf
         # print("Finished column 0")
 
         # OTHER COLUMNS
         for j in range(1, n):
             # print("Calculating column " + str(j))
-            for i in range(0, t):
+            for t_i in self.t.keys():
                 # EMISSION PROBABILITY
-                if words[j] in self.word2freq.keys():
-                    ep = self.emission[self.idx2tag[i]][words[j]]
+                if self.word2freq[words[j]] >= self.minFreq:
+                # if words[j] in self.word2freq.keys():
+                    ep = self.e[t_i][words[j]]
                 else:
-                    ep = self.emission[self.idx2tag[i]][UNK]
-                # print("Finished ep")
-                # TRANSITION POSSIBILITY
-                pmax = -math.inf
-                kmax = -1
-                for k in range(0, t):
-                    tp = self.transition[self.idx2tag[k]][self.idx2tag[i]]
-                    try:
-                        p = trellis[k][j-1] + log(ep) + log(tp)
-                    except:
-                        p = -math.inf
-                    if p > pmax:
-                        pmax = p
-                        kmax = k
-                trellis[i][j] = pmax
-                bp[i][j] = kmax
+                    ep = self.e[t_i][UNK]
+
+                if ep != 0:
+                    # TRANSITION POSSIBILITY
+                    pmax = -math.inf
+                    kmax = -1
+                    for t_k in self.t.keys():
+                        tp = self.t[t_k][t_i]
+                        try:
+                            p = trellis[self.tag2idx[t_k]][j-1] + log(ep) + log(tp)
+                        except:
+                            p = -math.inf
+                        if p > pmax:
+                            pmax = p
+                            kmax = self.tag2idx[t_k]
+                    trellis[self.tag2idx[t_i]][j] = pmax
+                    bp[self.tag2idx[t_i]][j] = kmax
             # print("Finished column " + str(j))
 
         # FIND MAX IN LAST COLUMN
